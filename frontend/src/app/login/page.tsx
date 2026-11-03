@@ -1,0 +1,133 @@
+"use client";
+
+import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { api } from "@/lib/api";
+
+export default function LoginPage() {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [registerMode, setRegisterMode] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // Nếu đã đăng nhập thì chuyển thẳng vào dashboard.
+  useEffect(() => {
+    api.me().then(() => router.replace("/")).catch(() => {});
+  }, [router]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const result = registerMode
+        ? await api.register(email, password, displayName)
+        : await api.login(email, password);
+      if ("mfaRequired" in result) {
+        router.push("/login/2fa");
+      } else {
+        router.replace("/");
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Đăng nhập thất bại");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex w-full bg-white">
+      {/* Left Column: Login Form */}
+      <div className="w-full lg:w-1/2 flex flex-col justify-center items-center p-8 lg:p-24 relative">
+        <div className="w-full max-w-sm mx-auto">
+          {/* Header */}
+          <div className="mb-10 text-center lg:text-left">
+            <h1 className="text-[32px] font-bold text-gray-900 mb-2 tracking-tight">Đăng nhập</h1>
+            <p className="text-gray-500 text-[15px]">Nền tảng quản lý dự án doanh nghiệp Flowie</p>
+          </div>
+
+          <form onSubmit={submit} className="space-y-4">
+            {registerMode && (
+              <input required type="text" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Tên hiển thị" className="w-full rounded-xl border border-gray-200 px-4 py-3.5 outline-none focus:border-blue-500" />
+            )}
+            <input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" className="w-full rounded-xl border border-gray-200 px-4 py-3.5 outline-none focus:border-blue-500" />
+            <input required minLength={8} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mật khẩu" className="w-full rounded-xl border border-gray-200 px-4 py-3.5 outline-none focus:border-blue-500" />
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <button disabled={loading} type="submit" className="w-full rounded-xl bg-blue-600 px-4 py-3.5 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-60">
+              {loading ? "Đang xử lý..." : registerMode ? "Tạo tài khoản" : "Đăng nhập"}
+            </button>
+          </form>
+
+          <button
+            type="button"
+            className="w-full mt-4 text-sm text-blue-600 hover:underline"
+            onClick={() => {
+              setRegisterMode((mode) => !mode);
+              setError("");
+            }}
+          >
+            {registerMode ? "Đã có tài khoản? Đăng nhập" : "Chưa có tài khoản? Đăng ký"}
+          </button>
+
+          {/* Footer Note */}
+          <p className="text-center text-gray-400 text-[13px] mt-8">
+            Đăng nhập bằng tài khoản Flowie của bạn.
+          </p>
+        </div>
+      </div>
+
+      {/* Right Column: Hero Image with Glassmorphism Cards */}
+      <div className="hidden lg:flex w-1/2 relative bg-gray-100 overflow-hidden items-center justify-center p-12">
+        <div 
+          className="absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: "url('https://images.unsplash.com/photo-1497366216548-37526070297c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80')" }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+        
+        {/* Floating Glass Cards to mimic the design */}
+        <div className="relative z-10 w-full max-w-lg">
+          <h2 className="text-white text-3xl font-bold mb-8">Tính năng nổi bật</h2>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-white/70 backdrop-blur-md border border-white/20 p-6 rounded-2xl shadow-xl">
+              <div className="flex justify-between items-center mb-4">
+                <span className="text-[13px] font-bold text-gray-700">Tổng công việc</span>
+                <span className="text-gray-400">•••</span>
+              </div>
+              <div className="text-[32px] font-black text-gray-900">425</div>
+              <div className="text-[12px] font-bold text-green-600 mt-1 flex items-center gap-1">
+                ↗ +2.45%
+              </div>
+            </div>
+
+            <div className="bg-white/70 backdrop-blur-md border border-white/20 p-6 rounded-2xl shadow-xl">
+              <div className="flex justify-between items-center mb-4">
+                <span className="text-[13px] font-bold text-gray-700">Hoàn thành</span>
+                <span className="text-gray-400">•••</span>
+              </div>
+              <div className="text-[32px] font-black text-gray-900">87</div>
+              <div className="text-[12px] font-bold text-green-600 mt-1 flex items-center gap-1">
+                ↗ +21%
+              </div>
+            </div>
+
+            <div className="bg-white/70 backdrop-blur-md border border-white/20 p-6 rounded-2xl shadow-xl col-span-2 flex items-center justify-between">
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-[13px] font-bold text-gray-700">Tiến độ dự án</span>
+                </div>
+                <div className="text-[32px] font-black text-gray-900">72,550 <span className="text-sm font-medium text-gray-500">giờ</span></div>
+              </div>
+              <div className="w-16 h-16 rounded-full border-4 border-blue-600 border-r-gray-200 flex items-center justify-center text-sm font-bold text-blue-600">
+                64%
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

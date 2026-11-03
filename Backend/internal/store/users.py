@@ -1,0 +1,137 @@
+import uuid
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Optional
+
+import asyncpg
+
+
+class NotFoundError(Exception):
+    """Raised when a queried row does not exist."""
+    pass
+
+
+USER_COLUMNS = (
+    "id, email, display_name, avatar_url, password_hash, is_system_admin, "
+    "is_active, last_login_at, created_at, updated_at"
+)
+
+
+@dataclass
+class User:
+    id: uuid.UUID
+    email: str
+    display_name: str
+    avatar_url: str
+    password_hash: str
+    is_system_admin: bool
+    is_active: bool
+    last_login_at: Optional[datetime]
+    created_at: datetime
+    updated_at: datetime
+
+
+def scan_user(row: Optional[asyncpg.Record]) -> User:
+    if row is None:
+        raise NotFoundError
+    return User(
+        id=row["id"],
+        email=row["email"],
+        display_name=row["display_name"],
+        avatar_url=row["avatar_url"],
+        password_hash=row["password_hash"],
+        is_system_admin=row["is_system_admin"],
+        is_active=row["is_active"],
+        last_login_at=row["last_login_at"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+class UserStore:
+    """Handles persistence for users."""
+
+    def __init__(self, pool: asyncpg.Pool):
+        self.pool = pool
+
+    async def create_local(
+        self,
+        email: str,
+        display_name: str,
+        password_hash: str,
+        is_admin: bool,
+    ) -> User:
+        row = await self.pool.fetchrow(
+            f"""
+            INSERT INTO users (email, display_name, password_hash, is_system_admin, last_login_at)
+            VALUES ($1, $2, $3, $4, now())
+            RETURNING {USER_COLUMNS}
+            """,
+            email,
+            display_name,
+            password_hash,
+            is_admin,
+        )
+        return scan_user(row)
+
+    async def get_by_email(self, email: str) -> User:
+        row = await self.pool.fetchrow(
+            f"SELECT {USER_COLUMNS} FROM users WHERE email = $1 AND is_active = TRUE",
+            email,
+        )
+        return scan_user(row)
+
+    async def set_last_login(self, user_id: uuid.UUID) -> User:
+        row = await self.pool.fetchrow(
+            f"""
+            UPDATE users SET last_login_at = now(), updated_at = now()
+            WHERE id = $1
+            RETURNING {USER_COLUMNS}
+            """,
+            user_id,
+        )
+        return scan_user(row)
+
+    async def get_by_id(self, id: uuid.UUID) -> User:
+        """Fetches a user by id."""
+        row = await self.pool.fetchrow(
+            f"SELECT {USER_COLUMNS} FROM users WHERE id = $1", id
+        )
+        return scan_user(row)
+
+    async def search(self, query: str, limit: int, offset: int) -> list[User]:
+        """Returns a page of users, optionally filtered by name or email.
+
+        This replaces an unbounded list_all: an Azure tenant sync leaves
+        thousands of rows here, and shipping all of them to the admin page
+        froze the browser.
+        """
+        rows = await self.pool.fetch(
+            f"""
+            SELECT {USER_COLUMNS} FROM users
+            WHERE ($1 = '' OR display_name ILIKE '%'||$1||'%' OR email ILIKE '%'||$1||'%')
+            ORDER BY is_system_admin DESC, display_name
+            LIMIT $2 OFFSET $3
+            """,
+            query,
+            limit,
+            offset,
+        )
+        return [scan_user(row) for row in rows]
+
+    async def count_users(self, query: str) -> int:
+        """Returns how many users match the same filter as search, so the
+        UI can show a total and page through it."""
+        return await self.pool.fetchval(
+            """
+            SELECT count(*) FROM users
+            WHERE ($1 = '' OR display_name ILIKE '%'||$1||'%' OR email ILIKE '%'||$1||'%')
+            """,
+            query,
+        )
+
+    async def set_system_admin(self, id: uuid.UUID, is_admin: bool) -> None:
+        """Sets the is_system_admin flag for a user."""
+        await self.pool.execute(
+            "UPDATE users SET is_system_admin = $2 WHERE id = $1", id, is_admin
+        )
